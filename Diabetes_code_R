@@ -1,0 +1,110 @@
+library(data.table)
+library(caTools)
+library(rpart)
+library(rpart.plot)
+library(nnet)
+        
+getwd()
+setwd("C:/Users/89278/Desktop")
+
+printConfusionMatrix <- function(pred, actual,prob){
+  actual <- ifelse(actual == 1,"Tested Positive","Tested Negative")
+  if (prob){
+    cm <- table(actual, ifelse(pred > 0.5,"Predicted Positve", "Predicted Negative"))
+  } else{
+    cm <- table(actual, ifelse(pred == 1,"Predicted Positve", "Predicted Negative"))
+  }
+  
+  acc <- round((cm[1,1]+cm[2,2])/length(pred) * 100, digits  = 2)
+  cat("Accurarcy is ",acc,"%")
+  return(cm)
+}
+
+df.dt <- fread("Diabetes.csv")
+df.dt <- data.frame(df.dt)
+df.dt$Class <- ifelse(df.dt$Class== "tested_positive",1,0)
+df.dt$Class <- factor(df.dt$Class)
+
+summary(df.dt)
+
+
+# ========================================================================================================
+# Purpose:      Split the data
+#=========================================================================================================
+set.seed(2014)
+msk <- sample.split(Y = df.dt$Class, SplitRatio = 0.7)
+train <- subset(df.dt, msk == T)
+test <- subset(df.dt, msk == F)
+
+
+#set.seed(123)
+#msk = sample.split(df.dt$Class, SplitRatio=0.3)
+#test = df.dt[msk,]  # use output of sample.split to ...
+#train  = df.dt[!msk,]  # create train and test subsets 
+
+# ========================================================================================================
+# Purpose:      Logit regression
+#=========================================================================================================
+m1 <- glm(Class ~ . - Class, data = train, family = binomial)
+summary(m1)
+pred <- predict(m1,test, type="response")
+printConfusionMatrix(pred, test$Class, TRUE)
+
+#m11 <- glm(Class ~ Number.of.times.pregnant1 + Plasma.glucose.concentration.a.2.hours1 +Body.mass.index1, data = train, family = binomial)
+summary(m11)
+
+pred <- predict(m11,test, type="response")
+printConfusionMatrix(pred, test$Class, TRUE)
+
+# ========================================================================================================
+# Purpose:      Decision Tree
+#=========================================================================================================
+
+m2 <- rpart(Class ~ . - Class , data = train, method = 'class', cp = 0)
+pred2 <-predict(m2,test, type='class') 
+pred2 <-as.numeric(as.character(pred2))
+printConfusionMatrix(pred2,test$Class,FALSE)
+
+prp(m2, type=2, extra=104, nn=T, fallen.leaves=T, nn.box.col = 'light blue')
+printcp(m2)
+plotcp(m2)
+
+
+cp.opt <- m2$cptable[which.min(m2$cptable[,"xerror"]),"CP"]  #选择具有最小xerror的cp的办法
+m21 <- prune(m2, cp = cp.opt)
+prp(m21, type=2, extra=104, nn=T, fallen.leaves=T, nn.box.col = 'light blue')
+
+pred21 <- predict(m21,test, type='class')
+pred21 <-as.numeric(as.character(pred21))
+printConfusionMatrix(pred21, test$Class, TRUE)
+
+# ========================================================================================================
+# Purpose:      Neural Network
+#=========================================================================================================
+df.dt$Number.of.times.pregnant1 <- (df.dt$Number.of.times.pregnant - min(df.dt$Number.of.times.pregnant))/(max(df.dt$Number.of.times.pregnant)-min(df.dt$Number.of.times.pregnant))
+df.dt$Plasma.glucose.concentration.a.2.hours1 <- (df.dt$Plasma.glucose.concentration.a.2.hours - min(df.dt$Plasma.glucose.concentration.a.2.hours))/(max(df.dt$Plasma.glucose.concentration.a.2.hours)-min(df.dt$Plasma.glucose.concentration.a.2.hours))
+df.dt$Diastolic.blood.pressure1 <- (df.dt$Diastolic.blood.pressure - min(df.dt$Diastolic.blood.pressure))/(max(df.dt$Diastolic.blood.pressure)-min(df.dt$Number.of.times.pregnant))
+df.dt$Triceps.skin.fold.thickness1 <- (df.dt$Triceps.skin.fold.thickness - min(df.dt$Triceps.skin.fold.thickness))/(max(df.dt$Triceps.skin.fold.thickness)-min(df.dt$Triceps.skin.fold.thickness))
+df.dt$X2.Hour.serum.insulin1 <- (df.dt$X2.Hour.serum.insulin - min(df.dt$X2.Hour.serum.insulin))/(max(df.dt$X2.Hour.serum.insulin)-min(df.dt$X2.Hour.serum.insulin))
+df.dt$Body.mass.index1<- (df.dt$Body.mass.index - min(df.dt$Body.mass.index ))/(max(df.dt$Body.mass.index )-min(df.dt$Body.mass.index ))
+df.dt$Diabetes.pedigree.function1<- (df.dt$Diabetes.pedigree.function - min(df.dt$Diabetes.pedigree.function ))/(max(df.dt$Diabetes.pedigree.function )-min(df.dt$Diabetes.pedigree.function))
+df.dt$Age1<- (df.dt$Age - min(df.dt$Age ))/(max(df.dt$Age )-min(df.dt$Age ))
+
+
+df.dt$Class1 <- df.dt$Class
+df1.dt <- df.dt[,c(10:18)]
+
+set.seed(2014)
+msk <- sample.split(Y = df1.dt$Class1, SplitRatio = 0.7)
+train3 <- subset(df1.dt, msk == T)
+test3 <- subset(df1.dt, msk == F)
+
+m3 <- nnet(Class1 ~ . - Class1, data=train3, size=4, maxit = 100)
+
+pred3 <-predict(m3,test3, type='class') 
+pred3 <-as.numeric(as.character(pred3))
+cat('Trainset Confusion Matrix with nnet (1 hidden layer, 4 hidden nodes, algo = backprog):')
+table(test3$Class1, pred3)
+
+printConfusionMatrix(pred3,test3$Class1,FALSE)
+
