@@ -1,0 +1,203 @@
+import pandas as pd
+import sklearn
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn import tree
+from sklearn import linear_model
+from sklearn import preprocessing
+from sklearn.metrics import confusion_matrix
+from matplotlib import pyplot as plt
+from sklearn.model_selection import KFold
+import statsmodels.api as sm
+from scipy import stats
+import statsmodels.formula.api as smf
+from keras import backend as K
+from keras.models import Input, Model
+from keras.layers import Dense, Dropout
+from itertools import product
+# from tqdm import tqdm
+import warnings
+
+warnings.filterwarnings("ignore")
+
+
+def plot_confusion_matrix(cm):
+    fig, ax = plt.subplots()
+    im_ = ax.imshow(cm, interpolation='nearest', cmap='Blues')
+    xlen, ylen = cm.shape
+    thresh = (cm.max() + cm.min()) / xlen
+    display_labels = (0, 1)
+    cmap_min, cmap_max = im_.cmap(0), im_.cmap(256)
+    for i, j in product(range(xlen), range(xlen)):
+        color = cmap_max if cm[i, j] < thresh else cmap_min
+        ax.text(j, i, format(cm[i, j], '.0f'), ha="center", va="center", color=color)
+    fig.colorbar(im_, ax=ax)
+    ax.set(xticks=np.arange(xlen),
+           yticks=np.arange(ylen),
+           xticklabels=display_labels,
+           yticklabels=display_labels,
+           ylabel="True label",
+           xlabel="Predicted label")
+    ax.set_ylim((2 - 0.5, -0.5))
+    plt.show()
+    return None
+
+
+def get_accuracy(y_true, y_pred):
+    return sum(y_true == y_pred) / len(y_true)
+
+
+def Logistic_Regression_sklearn(scaled_X_train, y_train, scaled_X_test, y_test):
+    linear_classifier = linear_model.LogisticRegression(random_state=123)
+    linear_classifier.fit(scaled_X_train, y_train)
+    y_pred = linear_classifier.predict(scaled_X_test)
+    # cm = confusion_matrix(y_test, y_pred)
+    # plot_confusion_matrix(cm)
+    score = get_accuracy(y_test, y_pred)
+    return score
+
+
+def Logistic_Regression_statsmodels(scaled_X_train, y_train, scaled_X_test, y_test):
+    logitfit = sm.Logit(y_train.to_numpy(), sm.add_constant(scaled_X_train)).fit()
+    p_values = np.array(logitfit.pvalues[1:])
+    index = np.where(p_values <= 0.03)
+
+    scaled_X_train = scaled_X_train[:, index].squeeze()
+    # print(scaled_X_train.shape)
+    scaled_X_test = scaled_X_test[:, index].squeeze()
+
+    linear_classifier = linear_model.LogisticRegression(random_state=2020)
+    linear_classifier.fit(scaled_X_train, y_train)
+    y_pred = linear_classifier.predict(scaled_X_test)
+    # cm = confusion_matrix(y_test, y_pred)
+    # plot_confusion_matrix(cm)
+    score = get_accuracy(y_test, y_pred)
+    return score
+
+
+def Decision_tree(X_train, y_train, X_test, y_test):
+    estimator = tree.DecisionTreeClassifier()  # 定义决策树
+    estimator = estimator.fit(X_train, y_train)  # 训练决策树
+    normal_score = estimator.score(X_test, y_test)
+    # print('normal_training_score', normal_score)
+
+    """### Pruning """
+    kf = KFold(n_splits=10, shuffle=True)
+    mean_val_scores = []
+    mean_train_scores = []
+
+    estimator = tree.DecisionTreeClassifier()
+    path = estimator.cost_complexity_pruning_path(X_train, y_train)
+    ccp_alphas, impurities = path.ccp_alphas, path.impurities
+    # print(len(ccp_alphas))
+    clfs = []
+    for ccp_alpha in ccp_alphas:
+        clf = tree.DecisionTreeClassifier(random_state=0, ccp_alpha=ccp_alpha)
+        val_scores = []
+        train_scores = []
+        for k, (train, val) in enumerate(kf.split(X_train, y_train)):
+            x_training = X_train[train]
+            y_training = y_train.iloc[train]
+            x_val = X_train[val]
+            y_val = y_train.iloc[val]
+            clf.fit(x_training, y_training)
+
+            val_score = clf.score(x_val, y_val)
+            val_scores.append(val_score)
+            train_score = clf.score(x_training, y_training)
+            train_scores.append(train_score)
+        mean_val_scores.append(sum(val_scores) / len(val_scores))
+        mean_train_scores.append(sum(train_scores) / len(train_scores))
+
+    max_index = mean_val_scores.index(max(mean_val_scores))
+    # print('max accuracy of cross validation', mean_val_scores[max_index])
+
+    ccp_alpha = ccp_alphas[max_index]
+
+    clf_final = tree.DecisionTreeClassifier(random_state=0, ccp_alpha=ccp_alpha)
+    clf_final.fit(scaled_X_train, y_train)
+    pruned_score = clf_final.score(scaled_X_test, y_test)
+    # plt.show(tree.plot_tree(clf))
+    # print('final test accuracy', pruned_score)
+    return normal_score, pruned_score
+
+
+def NN_method(input_dim, scaled_X_train, y_train, scaled_X_test, y_test):
+    i = Input(shape=(input_dim,))
+    x = Dense(216, activation='relu')(i)
+    x = Dropout(0.2)(x)
+    x = Dense(1, activation='sigmoid')(x)
+    model = Model(inputs=[i], outputs=[x])
+    model.compile(loss='binary_crossentropy',
+                  optimizer='RMSprop',
+                  metrics=['accuracy'])
+    # print(model.summary())
+
+    nn = model
+    nn.fit(scaled_X_train, y_train,
+           batch_size=16, epochs=100,
+           validation_split=0.2,
+           verbose=0)
+
+    loss, acc = nn.evaluate(scaled_X_test, y_test)
+    y_pred = (nn.predict(scaled_X_test) > 0.5).reshape(y_test.shape)
+    # cm = confusion_matrix(y_test,y_pred)
+    # plot_confusion_matrix(cm)
+    score = get_accuracy(y_test, y_pred)
+    return score
+
+
+def read_dataset(file_name):
+    df = pd.read_csv(file_name)
+    y = pd.get_dummies(df['Class'])['tested_positive']
+    X = df[df.columns[~df.columns.isin(['Class'])]]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=2020)
+
+    scaler = preprocessing.MinMaxScaler().fit(X_train)
+    scaled_X_train = scaler.transform(X_train)
+    scaled_X_test = scaler.transform(X_test)
+
+    X_train = np.array(X_train)
+    X_test = np.array(X_test)
+    return scaled_X_train, y_train, scaled_X_test, y_test, X_train, X_test
+
+
+if __name__ == '__main__':
+    # normal_training_score, pruning_score = Decision_tree()
+    filename = 'Diabetes.csv'
+    scaled_X_train, y_train, scaled_X_test, y_test, X_train, X_test = read_dataset(filename)
+
+    normal_training_scores = []
+    pruning_scores = []
+    for i in range(10):
+        normal_training_score, pruning_score = Decision_tree(X_train, y_train, X_test, y_test)
+        normal_training_scores.append(normal_training_score)
+        pruning_scores.append(pruning_score)
+    print(normal_training_scores)
+
+    mean_normal_training_score = sum(normal_training_scores) / len(normal_training_scores)
+    mean_pruning_score = sum(pruning_scores) / len(pruning_scores)
+    print('mean_normal_score: ', mean_normal_training_score, normal_training_scores)
+    print('mean_pruned_score: ', mean_pruning_score, pruning_scores)
+
+    test_scores = []
+    for i in range(10):
+        test_score = NN_method(8, scaled_X_train, y_train, scaled_X_test, y_test)
+        test_scores.append(test_score)
+    mean_score = sum(test_scores) / len(test_scores)
+    print('NN_method_mean_score: ', mean_score, test_scores)
+
+    test_scores = []
+    for i in range(10):
+        test_score = Logistic_Regression_sklearn(scaled_X_train, y_train, scaled_X_test, y_test)
+        test_scores.append(test_score)
+    mean_score = sum(test_scores) / len(test_scores)
+    print('Logistic_Regression_mean_score: ', mean_score, test_scores)
+
+    test_scores = []
+    for i in range(10):
+        test_score = Logistic_Regression_statsmodels(scaled_X_train, y_train, scaled_X_test, y_test)
+        test_scores.append(test_score)
+    mean_score = sum(test_scores) / len(test_scores)
+    print('Logistic_Regression_reduce _mean_score: ', mean_score, test_scores)
+
