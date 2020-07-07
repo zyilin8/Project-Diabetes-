@@ -64,7 +64,7 @@ printcp(m2)
 plotcp(m2)
 
 
-cp.opt <- m2$cptable[which.min(m2$cptable[,"xerror"]),"CP"]  #选择具有最小xerror的cp的办法
+cp.opt <- m2$cptable[which.min(m2$cptable[,"xerror"]),"CP"]  
 m21 <- prune(m2, cp = cp.opt)
 prp(m21, type=2, extra=104, nn=T, fallen.leaves=T, nn.box.col = 'light blue')
 
