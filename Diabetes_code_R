@@ -36,12 +36,6 @@ msk <- sample.split(Y = df.dt$Class, SplitRatio = 0.7)
 train <- subset(df.dt, msk == T)
 test <- subset(df.dt, msk == F)
 
-
-#set.seed(123)
-#msk = sample.split(df.dt$Class, SplitRatio=0.3)
-#test = df.dt[msk,]  # use output of sample.split to ...
-#train  = df.dt[!msk,]  # create train and test subsets 
-
 # ========================================================================================================
 # Purpose:      Logit regression
 #=========================================================================================================
